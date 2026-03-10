@@ -1,4 +1,4 @@
-name: gothaam_cal
+name: gothaam_ana
 channels:
   - conda-forge
   - defaults
