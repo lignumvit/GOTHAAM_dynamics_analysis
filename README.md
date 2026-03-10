@@ -1,5 +1,12 @@
 # GOTHAAM_dynamics_analysis
-A quick and dirty repo for analysis to be shared with GOTHAAMites
+
+A quick and dirty repo for analysis to be shared with GOTHAAMites.
+
+For the most part, the intent here is to share the most up-to-date html files, which 
+include the analysis in a form that is somewhat interactive. Viewers can download
+these html files and open them up in their browser to view.
+
+I will periodically update this repository with additional analysis.
 
 ## Python Environment
 
