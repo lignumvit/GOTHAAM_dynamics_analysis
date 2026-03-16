@@ -11,9 +11,9 @@ I will periodically update this repository with additional analysis.
 ## Main Contents
 
  - In gothaam\_profile\_ana.html, you'll find analysis of all profiles detected in GOTHAAM. This includes:
-  - Summary stats (# of profiles per RF, # of profiles total) 
-    - 313 Over Land, 265 Over Ocean, 583 Total
-  - Start and end times of all profiles (seconds from midnight of start date)
+   - Summary stats (# of profiles per RF, # of profiles total) 
+     - 313 Over Land, 265 Over Ocean, 583 Total
+   - Start and end times of all profiles (seconds from midnight of start date)
  - gothaam\_bl\_ana.html is a working notebook on boundary layer detection for the BL flag project
 
 ## Python Environment
