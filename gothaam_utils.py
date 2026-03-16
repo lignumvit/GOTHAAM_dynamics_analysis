@@ -282,12 +282,23 @@ def plot_track(df: pd.DataFrame, land_profiles, marine_profiles, title: str ='')
 def format_ticks(plot):
     plot.xaxis.formatter=DatetimeTickFormatter(days ='%h:%m', hours="%h:%m", minutes="%h:%m",hourmin = '%h:%m')
 
-def plot_profile_ts(df: pd.DataFrame, land_profiles, marine_profiles):
+def plot_profile_ts(df: pd.DataFrame, land_profiles, marine_profiles, all_ts=False):
     # set up hover tool
     ht = HoverTool(tooltips=[('time', '@x{%H:%M:%S}'), ('y', '@y')], formatters={'@x': 'datetime'})
 
+    n_ts = len(df['datetime'])
+    w_var_ts = np.zeros(n_ts)
+    tas_var_ts = np.zeros(n_ts)
+    avg_n_sec = 10
+    half_avg = round(avg_n_sec/2)
+    w = df['WIC'].to_numpy()
+    tas = df['TASF'].to_numpy()
+    for i in range(half_avg,n_ts-half_avg):
+        w_var_ts[i] = np.var(w[i-half_avg:i+half_avg])
+        tas_var_ts[i] = np.var(tas[i-half_avg:i+half_avg])
+
     # generate the altitude, heading and gps quality plots
-    height = 250
+    height = 200
     width = 1000
 
     p1 = figure(width=width, height=height)
@@ -323,8 +334,32 @@ def plot_profile_ts(df: pd.DataFrame, land_profiles, marine_profiles):
     p2.add_tools(ht)
     format_ticks(p2)
 
+    p3 = figure(width=width, height=height, x_range=p1.x_range, y_range=[0,10])
+    p3.add_layout(Title(text="Variance [m2/s2]", align="center"), "left")
+    p3.line(df['datetime'], w_var_ts, color='black', legend_label='Var(w)')
+    p3.line(df['datetime'], tas_var_ts, color='red', legend_label='Var(TAS)')
+    p3.legend.location = 'bottom_right'
+    p3.add_tools(ht)
+    format_ticks(p3)
 
-    p = gridplot([[p1],])
+    p4 = figure(width=width, height=height, x_range=p1.x_range)
+    p4.add_layout(Title(text="Theta [K]", align="center"), "left")
+    p4.line(df['datetime'], df['THETA'], color='black', legend_label='THETA')
+    p4.legend.location = 'bottom_right'
+    p4.add_tools(ht)
+    format_ticks(p4)
+
+    p5 = figure(width=width, height=height, x_range=p1.x_range)
+    p5.add_layout(Title(text="e [hPa]", align="center"), "left")
+    p5.line(df['datetime'], df['EW_VXL'], color='black', legend_label='e')
+    p5.legend.location = 'bottom_right'
+    p5.add_tools(ht)
+    format_ticks(p5)
+
+    if all_ts:
+        p = gridplot([[p1], [p3], [p4], [p5]])
+    else:
+        p = gridplot([[p1]])
     show(p)
 
 def detect_climb_descent(df: pd.DataFrame):
