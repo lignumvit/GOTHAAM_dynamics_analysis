@@ -19,6 +19,9 @@ import itertools
 from scipy import signal
 from scipy.stats import skew
 from global_land_mask import globe
+from bokeh.models import LinearColorMapper, ColorBar
+from bokeh.palettes import Viridis256, Category20b
+
 
 # Thresholds for determining what data can be considered in AoA coef determination (e.g. straight-and-level).
 # Used by mask_straight_and_level.
@@ -456,3 +459,113 @@ def plot_profiles(df: pd.DataFrame, profiles: list, title = ''):
     p = gridplot([[p1, p2, p3, p4],])
     show(p)
 
+from bokeh.models import LinearColorMapper, ColorBar, Title
+from bokeh.plotting import figure, show
+from bokeh.layouts import gridplot
+from bokeh.palettes import tol
+import numpy as np
+
+def plot_profiles_by_time_split(data_dict, all_profiles_dict, domain='land', title=''):
+    """
+    Plots potential temperature profiles colored by relative local time of day (-3 to +3 hours),
+    split into four 6-hour periods: Midnight, Morning, Noon, and Evening.
+    Profiles are sorted and plotted in chronological order of local time.
+    """
+    height = 400
+    width = 420 
+    
+    # Initialize the four plots, linking their x and y ranges for easy comparison
+    p_midnight = figure(width=width, height=height, title=f"{title} - Midnight (21:00-03:00)")
+    p_midnight.add_layout(Title(text="Height [km]", align="center"), "left")
+    p_midnight.add_layout(Title(text="Potential Temperature [K]", align="center"), "below")
+    
+    p_morning = figure(width=width, height=height, title=f"{title} - Morning (03:00-09:00)",
+                       x_range=p_midnight.x_range, y_range=p_midnight.y_range)
+    p_morning.add_layout(Title(text="Height [km]", align="center"), "left")
+    p_morning.add_layout(Title(text="Potential Temperature [K]", align="center"), "below")
+    
+    p_noon = figure(width=width, height=height, title=f"{title} - Noon (09:00-15:00)", 
+                    x_range=p_midnight.x_range, y_range=p_midnight.y_range)
+    p_noon.add_layout(Title(text="Height [km]", align="center"), "left")
+    p_noon.add_layout(Title(text="Potential Temperature [K]", align="center"), "below")
+    
+    p_evening = figure(width=width, height=height, title=f"{title} - Evening (15:00-21:00)", 
+                       x_range=p_midnight.x_range, y_range=p_midnight.y_range)
+    p_evening.add_layout(Title(text="Height [km]", align="center"), "left")
+    p_evening.add_layout(Title(text="Potential Temperature [K]", align="center"), "below")
+    
+    # Grab the 11-color Sunset palette
+    palette = tol['Sunset'][11]
+    
+    # Create the colorbar mapping -3 to +3 hours
+    color_mapper = LinearColorMapper(palette=palette, low=-3, high=3)
+    
+    # Add identical colorbars to ALL plots so that their inner drawing areas remain exactly the same size
+    for p in [p_midnight, p_morning, p_noon, p_evening]:
+        p.add_layout(ColorBar(color_mapper=color_mapper, title="Rel Time [h]", width=15), 'right')
+    
+    # List to store profile data for sorting
+    profiles_to_plot = []
+    
+    for flight, df in data_dict.items():
+        if not "rf" in flight:
+            continue
+            
+        profs = all_profiles_dict[flight].get(f'{domain}_profiles', [])
+        
+        for pair in profs:
+            mask = mask_in_times(df, pair[0], pair[1])
+            if not np.any(mask):
+                continue
+            
+            # Calculate mean UTC time and Longitude to find local time
+            mean_time_utc = np.nanmean(df['Time'][mask]) 
+            mean_lon = np.nanmean(df['GGLON'][mask])
+            
+            # Convert UTC seconds from midnight to local time in hours (0-24)
+            utc_hours = (mean_time_utc % 86400) / 3600.0
+            local_hours = (utc_hours + mean_lon / 15.0) % 24.0
+            
+            # Route the profile to the correct 6-hour plot and set the center hour
+            if 3.0 <= local_hours < 9.0:
+                target_plot = p_morning
+                center_hour = 6.0
+            elif 9.0 <= local_hours < 15.0:
+                target_plot = p_noon
+                center_hour = 12.0
+            elif 15.0 <= local_hours < 21.0:
+                target_plot = p_evening
+                center_hour = 18.0
+            else:  # 21:00 to 03:00
+                target_plot = p_midnight
+                center_hour = 0.0
+                
+            # Calculate time difference from the center of the period (-3 to +3)
+            dt = ((local_hours - center_hour) + 12) % 24 - 12
+            
+            # Map dt (-3 to +3) to a color index (0 to 10)
+            normalized_dt = (dt + 3) / 6.0
+            color_idx = max(0, min(10, int(normalized_dt * 11))) 
+            
+            hex_color = palette[color_idx]
+            
+            # Append the data to our list so we can sort it later
+            profiles_to_plot.append({
+                'local_hours': local_hours,
+                'plot': target_plot,
+                'theta': df['THETA'][mask],
+                'alt': df['GGALT'][mask] / 1000.0,
+                'color': hex_color
+            })
+            
+    # Sort the profiles chronologically by local time
+    profiles_to_plot.sort(key=lambda x: x['local_hours'])
+    
+    # Plot the sorted profiles
+    for prof in profiles_to_plot:
+        prof['plot'].line(prof['theta'], prof['alt'], color=prof['color'], width=1.5)
+            
+    # Arrange the plots chronologically in a 2x2 grid
+    p = gridplot([[p_midnight, p_morning], 
+                  [p_noon, p_evening]])
+    show(p)
