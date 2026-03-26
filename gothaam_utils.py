@@ -365,56 +365,54 @@ def plot_profile_ts(df: pd.DataFrame, land_profiles, marine_profiles, all_ts=Fal
         p = gridplot([[p1]])
     show(p)
 
-def detect_climb_descent(df: pd.DataFrame):
+def detect_straight_level(df: pd.DataFrame):
+    """
+    Detects periods of straight and level flight suitable for leg-based analysis.
+    Uses a 10-second moving average to smooth out momentary spikes in flight dynamics.
+    """
+    legs = []
 
-    profiles = []
-
-    vspd = df['GGVSPD'].to_numpy()
-    roll = df['ROLL'].to_numpy()
+    # Apply a 10-second moving average to smooth the detection variables
+    vspd = df['GGVSPD'].rolling(window=10, center=True, min_periods=1).mean().to_numpy()
+    roll = df['ROLL'].rolling(window=10, center=True, min_periods=1).mean().to_numpy()
+    tas = df['TASF'].rolling(window=10, center=True, min_periods=1).mean().to_numpy()
     t_sfm = df['Time'].to_numpy()
-    in_climb = False
-    in_descent = False
+    
+    in_leg = False
 
-    # tuning params to define climbs and descents
-    ascent_thresh = 2.5 # m/s
-    ascent_stop_thresh = 0.5 # m/s
-    descent_thresh = -2.5 # m/s
-    descent_stop_thresh = -0.5 # m/s
-    min_period = 90 # minimum lenght of climb or descent to count
+    # Tuning parameters to define straight and level
+    max_vspd_thresh = 1.5 # m/s (strict limit to ensure level flight)
+    max_roll_thresh = 5.0 # deg (strict limit to eliminate turns)
+    min_tas_thresh = 60.0 # m/s (lowered threshold)
+    min_period = 90 # minimum length of leg in seconds to count
 
-
-    #  iterate through and find ascents
     for i in range(len(t_sfm)):
-        if not in_climb:
-            #if vspd[i] >= ascent_thresh and abs(roll[i]) <= 5:
-            if vspd[i] >= ascent_thresh:
-                in_climb = True
+        # Skip NaNs to avoid logical errors
+        if np.isnan(vspd[i]) or np.isnan(roll[i]) or np.isnan(tas[i]):
+            is_sl = False
+        else:
+            is_sl = (abs(vspd[i]) <= max_vspd_thresh) and \
+                    (abs(roll[i]) <= max_roll_thresh) and \
+                    (tas[i] >= min_tas_thresh)
+            
+        if not in_leg:
+            if is_sl:
+                in_leg = True
                 st_time = int(t_sfm[i])
         else:
-            #if vspd[i] < ascent_stop_thresh or abs(roll[i]) > 5:
-            if vspd[i] < ascent_stop_thresh:
-                in_climb = False
+            if not is_sl:
+                in_leg = False
                 sp_time = int(t_sfm[i])
                 if sp_time - st_time > min_period:
-                    profiles.append([st_time,sp_time])
-
-     #  iterate through and find descents
-    for i in range(len(t_sfm)):
-        if not in_descent:
-            #if vspd[i] <= descent_thresh and abs(roll[i]) <= 5:
-            if vspd[i] <= descent_thresh:
-                in_descent = True
-                st_time = int(t_sfm[i])
-        else:
-            #if vspd[i] > descent_stop_thresh or abs(roll[i]) > 5:
-            if vspd[i] > descent_stop_thresh:
-                in_descent = False
-                sp_time = int(t_sfm[i])
-                if sp_time - st_time > min_period:
-                    profiles.append([st_time,sp_time])
-        
-    return profiles
-
+                    legs.append([st_time, sp_time])
+                    
+    # Catch a leg if the flight ends while still straight and level
+    if in_leg:
+        sp_time = int(t_sfm[-1])
+        if sp_time - st_time > min_period:
+            legs.append([st_time, sp_time])
+            
+    return legs
 
 def plot_profiles(df: pd.DataFrame, profiles: list, title = ''):
 
@@ -569,3 +567,290 @@ def plot_profiles_by_time_split(data_dict, all_profiles_dict, domain='land', tit
     p = gridplot([[p_midnight, p_morning], 
                   [p_noon, p_evening]])
     show(p)
+
+def detect_straight_level(df: pd.DataFrame):
+    """
+    Detects periods of straight and level flight suitable for leg-based analysis.
+    """
+    legs = []
+
+    vspd = df['GGVSPD'].to_numpy()
+    roll = df['ROLL'].to_numpy()
+    tas = df['TASF'].to_numpy()
+    t_sfm = df['Time'].to_numpy()
+    
+    in_leg = False
+
+    # Tuning parameters to define straight and level
+    max_vspd_thresh = 1.5 # m/s (strict limit to ensure level flight)
+    max_roll_thresh = 5.0 # deg (strict limit to eliminate turns)
+    min_tas_thresh = 60.0 # m/s (lowered threshold)
+    min_period = 90 # minimum length of leg in seconds to count (increased threshold)
+
+    for i in range(len(t_sfm)):
+        # Skip NaNs to avoid logical errors
+        if np.isnan(vspd[i]) or np.isnan(roll[i]) or np.isnan(tas[i]):
+            is_sl = False
+        else:
+            is_sl = (abs(vspd[i]) <= max_vspd_thresh) and \
+                    (abs(roll[i]) <= max_roll_thresh) and \
+                    (tas[i] >= min_tas_thresh)
+            
+        if not in_leg:
+            if is_sl:
+                in_leg = True
+                st_time = int(t_sfm[i])
+        else:
+            if not is_sl:
+                in_leg = False
+                sp_time = int(t_sfm[i])
+                if sp_time - st_time > min_period:
+                    legs.append([st_time, sp_time])
+                    
+    # Catch a leg if the flight ends while still straight and level
+    if in_leg:
+        sp_time = int(t_sfm[-1])
+        if sp_time - st_time > min_period:
+            legs.append([st_time, sp_time])
+            
+    return legs
+
+def plot_track_flux(df: pd.DataFrame, legs: list, title: str = ''):
+    # get latitude and longitude from dataframe
+    latitude = df["GGLAT"].to_numpy().squeeze()
+    longitude = df["GGLON"].to_numpy().squeeze()
+    
+    # update to mercator projection
+    k = 6378137
+    longitude = longitude * (k * np.pi/180.0)
+    latitude = np.log(np.tan((90 + latitude) * np.pi/360.0)) * k
+
+    # create the plot layout and add axis labels
+    try:
+        p = figure(width=800, height=500, title=f"{title} Flux Legs", x_axis_type="mercator", y_axis_type="mercator") 
+        p.add_layout(Title(text="Longitude [Degrees]", align="center"), "below")
+        p.add_layout(Title(text="Latitude [Degrees]", align="center"), "left")
+        
+        # Plot full flight track
+        p.line(longitude, latitude, color="black")
+        
+        # Highlight flux legs
+        colors = itertools.cycle(Category20[20])
+        for pair in legs:
+            mask = mask_in_times(df, pair[0], pair[1])
+            p.line(longitude[mask], latitude[mask], color=next(colors), line_width=5, line_cap='round')
+            
+        p.add_tile("CARTODBPOSITRON_RETINA_NOLABELS", retina=True)
+    
+        show(p)
+    except Exception as e:
+        print(e)
+
+def plot_flux_leg_ts(df: pd.DataFrame, legs: list, all_ts: bool = False, width: int = 1000, height: int = 200):
+    """
+    Plots a time series of flight data, highlighting specific flux legs.
+    """
+    # set up hover tool
+    ht = HoverTool(tooltips=[('time', '@x{%H:%M:%S}'), ('y', '@y')], formatters={'@x': 'datetime'})
+
+    n_ts = len(df['datetime'])
+    w_var_ts = np.zeros(n_ts)
+    tas_var_ts = np.zeros(n_ts)
+    avg_n_sec = 10
+    half_avg = round(avg_n_sec/2)
+    w = df['WIC'].to_numpy()
+    tas = df['TASF'].to_numpy()
+    for i in range(half_avg, n_ts-half_avg):
+        w_var_ts[i] = np.var(w[i-half_avg:i+half_avg])
+        tas_var_ts[i] = np.var(tas[i-half_avg:i+half_avg])
+
+    # 1. Altitude Plot
+    p1 = figure(width=width, height=height)
+    p1.add_layout(Title(text="Pres. Alt. [ft]", align="center"), "left")
+    p1.line(df['datetime'], df['PALTF'], color='black', legend_label='PALTF')
+    colors = itertools.cycle(Category20[20])
+    for pair in legs:
+        mask = mask_in_times(df, pair[0], pair[1])
+        p1.line(df['datetime'][mask], df['PALTF'][mask], color=next(colors), line_cap='round', line_width=5)
+    p1.legend.location = 'bottom_right'
+    p1.add_tools(ht)
+    format_ticks(p1)
+
+    # 2. Roll Plot
+    colors = itertools.cycle(Category20[20])
+    p2 = figure(width=width, height=height, x_range=p1.x_range)
+    p2.add_layout(Title(text="Roll [deg]", align="center"), "left")
+    p2.line(df['datetime'], df['ROLL'], color='black', legend_label='Roll')
+    for pair in legs:
+        mask = mask_in_times(df, pair[0], pair[1])
+        p2.line(df['datetime'][mask], df['ROLL'][mask], color=next(colors), line_cap='round', line_width=3)
+    p2.legend.location = 'bottom_right'
+    p2.add_tools(ht)
+    format_ticks(p2)
+
+    # 3. Vertical Speed Plot (Explicitly labeled GGVSPD)
+    colors = itertools.cycle(Category20[20])
+    p3 = figure(width=width, height=height, x_range=p1.x_range)
+    p3.add_layout(Title(text="GGVSPD [m/s]", align="center"), "left")
+    p3.line(df['datetime'], df['GGVSPD'], color='black', legend_label='GGVSPD')
+    for pair in legs:
+        mask = mask_in_times(df, pair[0], pair[1])
+        p3.line(df['datetime'][mask], df['GGVSPD'][mask], color=next(colors), line_cap='round', line_width=3)
+    p3.legend.location = 'bottom_right'
+    p3.add_tools(ht)
+    format_ticks(p3)
+
+    p = gridplot([[p1], [p2], [p3]])
+        
+    show(p)
+
+from bokeh.layouts import column
+
+def plot_interactive_flux_dashboard(df: pd.DataFrame, legs: list, title: str = ''):
+    """
+    Creates a dashboard combining a map and time-series plots. 
+    Zooming/panning the time series dynamically updates the visible track on the map.
+    Includes both raw (light gray) and 10-s smoothed (black) traces.
+    """
+    # -----------------------------------------------------------
+    # 1. Prepare Data & Projections
+    # -----------------------------------------------------------
+    k = 6378137
+    latitude = df["GGLAT"].to_numpy().squeeze()
+    longitude = df["GGLON"].to_numpy().squeeze()
+    
+    longitude_merc = longitude * (k * np.pi/180.0)
+    latitude_merc = np.log(np.tan((90 + latitude) * np.pi/360.0)) * k
+    
+    # Pre-calculate 10-second smoothed variables for the plots
+    paltf_smooth = df['PALTF'].rolling(window=10, center=True, min_periods=1).mean()
+    roll_smooth = df['ROLL'].rolling(window=10, center=True, min_periods=1).mean()
+    vspd_smooth = df['GGVSPD'].rolling(window=10, center=True, min_periods=1).mean()
+
+    # We need two sets of DataSources: 'orig' keeps the full arrays untouched in JS, 
+    # 'map' gets dynamically overwritten to show only the zoomed time window.
+    map_sources = []
+    orig_sources = []
+    
+    # Base Flight Track
+    track_src = ColumnDataSource(dict(time=df['datetime'], lon=longitude_merc, lat=latitude_merc))
+    orig_track_src = ColumnDataSource(dict(time=df['datetime'], lon=longitude_merc, lat=latitude_merc))
+    map_sources.append(track_src)
+    orig_sources.append(orig_track_src)
+    
+    # Highlighted Legs
+    leg_colors = []
+    colors = itertools.cycle(Category20[20])
+    for pair in legs:
+        mask = mask_in_times(df, pair[0], pair[1])
+        l_src = ColumnDataSource(dict(time=df['datetime'][mask], lon=longitude_merc[mask], lat=latitude_merc[mask]))
+        o_src = ColumnDataSource(dict(time=df['datetime'][mask], lon=longitude_merc[mask], lat=latitude_merc[mask]))
+        map_sources.append(l_src)
+        orig_sources.append(o_src)
+        leg_colors.append(next(colors))
+
+    # -----------------------------------------------------------
+    # 2. Build Map Plot
+    # -----------------------------------------------------------
+    p_map = figure(width=700, height=400, title=f"{title} Map (Linked to Time Series)", 
+                   x_axis_type="mercator", y_axis_type="mercator") 
+    p_map.add_layout(Title(text="Longitude", align="center"), "below")
+    p_map.add_layout(Title(text="Latitude", align="center"), "left")
+    p_map.add_tile("CARTODBPOSITRON_RETINA_NOLABELS", retina=True)
+
+    # Plot base track
+    p_map.line('lon', 'lat', source=map_sources[0], color="black", line_width=1)
+    
+    # Plot legs
+    for i in range(1, len(map_sources)):
+        p_map.line('lon', 'lat', source=map_sources[i], color=leg_colors[i-1], line_width=5, line_cap='round')
+
+    # -----------------------------------------------------------
+    # 3. Build Time Series Plots
+    # -----------------------------------------------------------
+    ht = HoverTool(tooltips=[('time', '@x{%H:%M:%S}'), ('y', '@y')], formatters={'@x': 'datetime'})
+
+    # PALTF (Altitude)
+    p_alt = figure(width=700, height=160, x_axis_type='datetime')
+    p_alt.add_layout(Title(text="Alt [ft]", align="center"), "left")
+    p_alt.line(df['datetime'], df['PALTF'], color='lightgray', legend_label='Raw')
+    p_alt.line(df['datetime'], paltf_smooth, color='black', legend_label='10s Avg')
+    
+    c_iter = itertools.cycle(Category20[20])
+    for pair in legs:
+        mask = mask_in_times(df, pair[0], pair[1])
+        p_alt.line(df['datetime'][mask], paltf_smooth[mask], color=next(c_iter), line_width=4, line_cap='round')
+    p_alt.add_tools(ht)
+    p_alt.legend.location = 'bottom_right'
+    format_ticks(p_alt)
+
+    # ROLL
+    c_iter = itertools.cycle(Category20[20])
+    p_roll = figure(width=700, height=160, x_range=p_alt.x_range, x_axis_type='datetime')
+    p_roll.add_layout(Title(text="Roll [deg]", align="center"), "left")
+    p_roll.line(df['datetime'], df['ROLL'], color='lightgray', legend_label='Raw')
+    p_roll.line(df['datetime'], roll_smooth, color='black', legend_label='10s Avg')
+    for pair in legs:
+        mask = mask_in_times(df, pair[0], pair[1])
+        p_roll.line(df['datetime'][mask], roll_smooth[mask], color=next(c_iter), line_width=3, line_cap='round')
+    p_roll.add_tools(ht)
+    p_roll.legend.location = 'bottom_right'
+    format_ticks(p_roll)
+
+    # GGVSPD
+    c_iter = itertools.cycle(Category20[20])
+    p_vspd = figure(width=700, height=160, x_range=p_alt.x_range, x_axis_type='datetime')
+    p_vspd.add_layout(Title(text="GGVSPD [m/s]", align="center"), "left")
+    p_vspd.line(df['datetime'], df['GGVSPD'], color='lightgray', legend_label='Raw')
+    p_vspd.line(df['datetime'], vspd_smooth, color='black', legend_label='10s Avg')
+    for pair in legs:
+        mask = mask_in_times(df, pair[0], pair[1])
+        p_vspd.line(df['datetime'][mask], vspd_smooth[mask], color=next(c_iter), line_width=3, line_cap='round')
+    p_vspd.add_tools(ht)
+    p_vspd.legend.location = 'bottom_right'
+    format_ticks(p_vspd)
+
+    # -----------------------------------------------------------
+    # 4. JavaScript Callback for Interactivity
+    # -----------------------------------------------------------
+    callback_code = """
+    const start = xr.start;
+    const end = xr.end;
+    
+    for (let j = 0; j < map_sources.length; j++) {
+        const orig = orig_sources[j].data;
+        const target = map_sources[j].data;
+        
+        const t = orig['time'];
+        const lon = orig['lon'];
+        const lat = orig['lat'];
+        
+        const new_t = [];
+        const new_lon = [];
+        const new_lat = [];
+        
+        for(let i=0; i<t.length; i++) {
+            if(t[i] >= start && t[i] <= end) {
+                new_t.push(t[i]);
+                new_lon.push(lon[i]);
+                new_lat.push(lat[i]);
+            }
+        }
+        
+        target['time'] = new_t;
+        target['lon'] = new_lon;
+        target['lat'] = new_lat;
+        map_sources[j].change.emit();
+    }
+    """
+    
+    js_callback = CustomJS(args=dict(xr=p_alt.x_range, map_sources=map_sources, orig_sources=orig_sources), code=callback_code)
+    p_alt.x_range.js_on_change('start', js_callback)
+    p_alt.x_range.js_on_change('end', js_callback)
+
+    # -----------------------------------------------------------
+    # 5. Display Layout
+    # -----------------------------------------------------------
+    # Map on top, time series underneath
+    dashboard = column(p_map, p_alt, p_roll, p_vspd)
+    show(dashboard)
