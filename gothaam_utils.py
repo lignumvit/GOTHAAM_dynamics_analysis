@@ -854,3 +854,54 @@ def plot_interactive_flux_dashboard(df: pd.DataFrame, legs: list, title: str = '
     # Map on top, time series underneath
     dashboard = column(p_map, p_alt, p_roll, p_vspd)
     show(dashboard)
+
+def detect_climb_descent(df: pd.DataFrame):
+
+    profiles = []
+
+    vspd = df['GGVSPD'].to_numpy()
+    roll = df['ROLL'].to_numpy()
+    t_sfm = df['Time'].to_numpy()
+    in_climb = False
+    in_descent = False
+
+    # tuning params to define climbs and descents
+    ascent_thresh = 2.5 # m/s
+    ascent_stop_thresh = 0.5 # m/s
+    descent_thresh = -2.5 # m/s
+    descent_stop_thresh = -0.5 # m/s
+    min_period = 90 # minimum lenght of climb or descent to count
+
+
+    #  iterate through and find ascents
+    for i in range(len(t_sfm)):
+        if not in_climb:
+            #if vspd[i] >= ascent_thresh and abs(roll[i]) <= 5:
+            if vspd[i] >= ascent_thresh:
+                in_climb = True
+                st_time = int(t_sfm[i])
+        else:
+            #if vspd[i] < ascent_stop_thresh or abs(roll[i]) > 5:
+            if vspd[i] < ascent_stop_thresh:
+                in_climb = False
+                sp_time = int(t_sfm[i])
+                if sp_time - st_time > min_period:
+                    profiles.append([st_time,sp_time])
+
+     #  iterate through and find descents
+    for i in range(len(t_sfm)):
+        if not in_descent:
+            #if vspd[i] <= descent_thresh and abs(roll[i]) <= 5:
+            if vspd[i] <= descent_thresh:
+                in_descent = True
+                st_time = int(t_sfm[i])
+        else:
+            #if vspd[i] > descent_stop_thresh or abs(roll[i]) > 5:
+            if vspd[i] > descent_stop_thresh:
+                in_descent = False
+                sp_time = int(t_sfm[i])
+                if sp_time - st_time > min_period:
+                    profiles.append([st_time,sp_time])
+
+    return profiles
+
