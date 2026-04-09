@@ -14,7 +14,7 @@ I will periodically update this repository with additional analysis.
    - Summary stats (# of profiles per RF, # of profiles total) 
      - 313 Over Land, 265 Over Ocean, 583 Total
    - Start and end times of all profiles (seconds from midnight of start date)
- - gothaam\_bl\_ana.html is a working notebook on boundary layer detection for the BL flag project
+ - gothaam\_bl\_ana.html includes all convective boundary layer periods diagnosed in GOTHAAM by myself (Chris Kruse, NCAR) and Emily Hunt (UMD).
 
 ## Python Environment
 
