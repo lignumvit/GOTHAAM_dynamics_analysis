@@ -205,3 +205,5 @@ marimo/_lsp/
 __marimo__/
 
 *.swp
+
+*.nc

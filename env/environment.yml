@@ -24,5 +24,6 @@ dependencies:
   - metpy==1.6.3
   - nbconvert=7.16.5
   - panel=1.5.5
+  - cdsapi=0.7.7
   - pip:
     - global-land-mask
